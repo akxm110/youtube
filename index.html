@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>유튜브 제목 추출기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .video-item {
+            transition: all 0.3s ease;
+        }
+        
+        .video-item:hover {
+            transform: translateX(8px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        }
+        
+        .loading {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="p-6">
+    <div class="container mx-auto max-w-4xl">
+        <!-- 헤더 -->
+        <div class="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+            <h1 class="text-4xl font-black text-center bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+                🎬 유튜브 제목 추출기
+            </h1>
+            <p class="text-center text-gray-600 font-medium">
+                키워드로 유튜브 영상 검색 → 제목 + 링크 추출
+            </p>
+        </div>
+
+        <!-- 입력 폼 -->
+        <div class="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                <!-- API 키 -->
+                <div>
+                    <label class="block text-gray-700 font-bold mb-2">
+                        🔑 API 키 <a href="https://console.cloud.google.com/" target="_blank" class="text-xs text-blue-500 hover:underline">(발급받기)</a>
+                    </label>
+                    <input 
+                        type="text" 
+                        id="apiKey" 
+                        placeholder="YouTube API 키"
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                    >
+                </div>
+
+                <!-- 키워드 -->
+                <div>
+                    <label class="block text-gray-700 font-bold mb-2">
+                        🔍 검색 키워드
+                    </label>
+                    <input 
+                        type="text" 
+                        id="keyword" 
+                        placeholder="예: 요리 레시피"
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                    >
+                </div>
+
+                <!-- 추출 개수 -->
+                <div>
+                    <label class="block text-gray-700 font-bold mb-2">
+                        📊 추출 개수
+                    </label>
+                    <input 
+                        type="number" 
+                        id="maxResults" 
+                        value="10"
+                        min="1"
+                        max="50"
+                        placeholder="1~50"
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                    >
+                    <p class="text-xs text-gray-500 mt-1">최대 50개까지 가능</p>
+                </div>
+
+                <!-- 최소 조회수 -->
+                <div>
+                    <label class="block text-gray-700 font-bold mb-2">
+                        👁️ 최소 조회수
+                    </label>
+                    <input 
+                        type="text" 
+                        id="minViews" 
+                        value="0"
+                        placeholder="예: 30만 또는 300000"
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                    >
+                    <p class="text-xs text-gray-500 mt-1">0 = 제한없음 (한글 가능: 20만, 1000만, 5천)</p>
+                </div>
+
+                <!-- 최대 조회수 -->
+                <div>
+                    <label class="block text-gray-700 font-bold mb-2">
+                        👁️ 최대 조회수 (선택)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="maxViews" 
+                        value="0"
+                        placeholder="예: 200만 또는 2000000"
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                    >
+                    <p class="text-xs text-gray-500 mt-1">0 = 제한없음</p>
+                </div>
+            </div>
+
+            <button 
+                id="searchBtn" 
+                class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-black py-4 px-8 rounded-lg transition shadow-xl text-lg"
+            >
+                🚀 검색 시작
+            </button>
+        </div>
+
+        <!-- 로딩 -->
+        <div id="loading" class="hidden bg-white rounded-2xl shadow-2xl p-8 mb-6 text-center">
+            <div class="loading mx-auto mb-4"></div>
+            <p class="text-gray-700 text-lg font-bold">검색 중...</p>
+            <p id="loadingDetail" class="text-gray-500 text-sm mt-2"></p>
+        </div>
+
+        <!-- 결과 통계 -->
+        <div id="stats" class="hidden bg-white rounded-2xl shadow-xl p-4 mb-4">
+            <div class="flex justify-center gap-4 flex-wrap">
+                <div class="bg-blue-50 px-4 py-2 rounded-lg">
+                    <span class="text-blue-600 font-bold">📹 <span id="totalCount">0</span>개 검색됨</span>
+                </div>
+                <div class="bg-green-50 px-4 py-2 rounded-lg">
+                    <span class="text-green-600 font-bold">✅ <span id="filteredCount">0</span>개 조건 만족</span>
+                </div>
+                <div class="bg-purple-50 px-4 py-2 rounded-lg">
+                    <span class="text-purple-600 font-bold">👁️ 총 <span id="totalViews">0</span> 조회수</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 복사/다운로드 버튼 -->
+        <div id="actionButtons" class="hidden mb-4 flex gap-3">
+            <button 
+                id="copyBtn" 
+                class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg transition shadow-lg"
+            >
+                📋 전체 복사
+            </button>
+            <button 
+                id="downloadBtn" 
+                class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition shadow-lg"
+            >
+                💾 TXT 다운로드
+            </button>
+        </div>
+
+        <!-- 결과 목록 -->
+        <div id="results" class="space-y-3"></div>
+
+        <!-- 에러 -->
+        <div id="error" class="hidden bg-red-50 border-2 border-red-300 rounded-2xl p-6">
+            <h3 class="text-xl font-bold text-red-600 mb-2">❌ 오류</h3>
+            <p id="errorMessage" class="text-red-700"></p>
+        </div>
+    </div>
+
+    <script>
+        let currentResults = [];
+
+        const apiKeyInput = document.getElementById('apiKey');
+        const keywordInput = document.getElementById('keyword');
+        const maxResultsInput = document.getElementById('maxResults');
+        const minViewsInput = document.getElementById('minViews');
+        const maxViewsInput = document.getElementById('maxViews');
+        const searchBtn = document.getElementById('searchBtn');
+        const loading = document.getElementById('loading');
+        const loadingDetail = document.getElementById('loadingDetail');
+        const stats = document.getElementById('stats');
+        const results = document.getElementById('results');
+        const error = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+        const actionButtons = document.getElementById('actionButtons');
+        const copyBtn = document.getElementById('copyBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // 로컬스토리지에서 API 키 불러오기
+        const savedApiKey = localStorage.getItem('youtubeApiKey');
+        if (savedApiKey) {
+            apiKeyInput.value = savedApiKey;
+        }
+
+        // API 키 저장
+        apiKeyInput.addEventListener('change', () => {
+            localStorage.setItem('youtubeApiKey', apiKeyInput.value);
+        });
+
+        // Enter 키로 검색
+        keywordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchVideos();
+        });
+
+        searchBtn.addEventListener('click', searchVideos);
+
+        // 한글 숫자를 숫자로 변환하는 함수
+        function parseKoreanNumber(input) {
+            if (!input || input === '0') return 0;
+            
+            // 이미 숫자면 그대로 반환
+            const num = parseInt(input);
+            if (!isNaN(num) && input.toString() === num.toString()) {
+                return num;
+            }
+            
+            // 한글 변환
+            let str = input.toString().trim();
+            let result = 0;
+            
+            // 억 처리
+            if (str.includes('억')) {
+                const eokMatch = str.match(/(\d+(?:\.\d+)?)\s*억/);
+                if (eokMatch) {
+                    result += parseFloat(eokMatch[1]) * 100000000;
+                    str = str.replace(/(\d+(?:\.\d+)?)\s*억/, '');
+                }
+            }
+            
+            // 만 처리
+            if (str.includes('만')) {
+                const manMatch = str.match(/(\d+(?:\.\d+)?)\s*만/);
+                if (manMatch) {
+                    result += parseFloat(manMatch[1]) * 10000;
+                    str = str.replace(/(\d+(?:\.\d+)?)\s*만/, '');
+                }
+            }
+            
+            // 천 처리
+            if (str.includes('천')) {
+                const cheonMatch = str.match(/(\d+(?:\.\d+)?)\s*천/);
+                if (cheonMatch) {
+                    result += parseFloat(cheonMatch[1]) * 1000;
+                    str = str.replace(/(\d+(?:\.\d+)?)\s*천/, '');
+                }
+            }
+            
+            // 나머지 숫자 처리
+            const remaining = parseInt(str.replace(/[^\d]/g, ''));
+            if (!isNaN(remaining)) {
+                result += remaining;
+            }
+            
+            return Math.floor(result) || 0;
+        }
+
+        async function searchVideos() {
+            const apiKey = apiKeyInput.value.trim();
+            const keyword = keywordInput.value.trim();
+            const maxResults = parseInt(maxResultsInput.value) || 10;
+            const minViews = parseKoreanNumber(minViewsInput.value);
+            const maxViews = parseKoreanNumber(maxViewsInput.value);
+
+            if (!apiKey) {
+                showError('API 키를 입력해주세요!');
+                return;
+            }
+
+            if (!keyword) {
+                showError('검색 키워드를 입력해주세요!');
+                return;
+            }
+
+            if (maxResults < 1 || maxResults > 50) {
+                showError('추출 개수는 1~50 사이로 입력해주세요!');
+                return;
+            }
+
+            if (minViews < 0) {
+                showError('최소 조회수는 0 이상이어야 합니다!');
+                return;
+            }
+
+            if (maxViews > 0 && maxViews < minViews) {
+                showError('최대 조회수는 최소 조회수보다 커야 합니다!');
+                return;
+            }
+
+            hideAll();
+            loading.classList.remove('hidden');
+            loadingDetail.textContent = '영상 검색 중...';
+
+            try {
+                // Step 1: 검색
+                const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keyword)}&type=video&maxResults=${maxResults}&order=viewCount&key=${apiKey}`;
+                const searchResponse = await fetch(searchUrl);
+                
+                if (!searchResponse.ok) {
+                    throw new Error('API 요청 실패. API 키가 올바른지 확인하세요.');
+                }
+                
+                const searchData = await searchResponse.json();
+
+                if (!searchData.items || searchData.items.length === 0) {
+                    throw new Error('검색 결과가 없습니다.');
+                }
+
+                loadingDetail.textContent = '영상 정보 가져오는 중...';
+
+                // Step 2: 상세 정보
+                const videoIds = searchData.items.map(item => item.id.videoId).join(',');
+                const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoIds}&key=${apiKey}`;
+                const detailsResponse = await fetch(detailsUrl);
+                
+                if (!detailsResponse.ok) {
+                    throw new Error('상세 정보 가져오기 실패');
+                }
+                
+                const detailsData = await detailsResponse.json();
+
+                // 결과 처리
+                let videos = detailsData.items.map(item => ({
+                    id: item.id,
+                    title: item.snippet.title,
+                    channelTitle: item.snippet.channelTitle,
+                    publishedAt: item.snippet.publishedAt,
+                    thumbnail: item.snippet.thumbnails.medium.url,
+                    viewCount: parseInt(item.statistics.viewCount || 0),
+                    likeCount: parseInt(item.statistics.likeCount || 0),
+                    url: `https://www.youtube.com/watch?v=${item.id}`
+                }));
+
+                // 조회수 범위 필터
+                const totalCount = videos.length;
+                videos = videos.filter(v => {
+                    if (minViews > 0 && v.viewCount < minViews) return false;
+                    if (maxViews > 0 && v.viewCount > maxViews) return false;
+                    return true;
+                });
+
+                if (videos.length === 0) {
+                    throw new Error('조건에 맞는 영상이 없습니다.');
+                }
+
+                // 조회수 순 정렬
+                videos.sort((a, b) => b.viewCount - a.viewCount);
+
+                currentResults = videos;
+                displayResults(videos);
+                updateStats(totalCount, videos.length, videos);
+
+            } catch (err) {
+                console.error(err);
+                showError(err.message || '오류가 발생했습니다.');
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        function displayResults(videos) {
+            results.innerHTML = '';
+
+            videos.forEach((video, index) => {
+                const div = document.createElement('div');
+                div.className = 'video-item bg-white rounded-xl shadow-lg p-5';
+                
+                div.innerHTML = `
+                    <div class="flex gap-4">
+                        <!-- 썸네일 -->
+                        <div class="flex-shrink-0">
+                            <a href="${video.url}" target="_blank">
+                                <img 
+                                    src="${video.thumbnail}" 
+                                    alt="썸네일" 
+                                    class="w-40 h-24 object-cover rounded-lg shadow hover:opacity-80 transition"
+                                >
+                            </a>
+                        </div>
+                        
+                        <!-- 정보 -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-start gap-2 mb-2">
+                                <span class="bg-purple-600 text-white font-bold px-3 py-1 rounded-full text-sm flex-shrink-0">${index + 1}</span>
+                                <h3 class="text-lg font-bold text-gray-800 flex-1">${escapeHtml(video.title)}</h3>
+                            </div>
+                            <p class="text-sm text-gray-600 mb-2">
+                                📺 ${escapeHtml(video.channelTitle)}<br>
+                                👁️ ${formatNumber(video.viewCount)} 조회 • 
+                                ❤️ ${formatNumber(video.likeCount)} • 
+                                📅 ${formatDate(video.publishedAt)}
+                            </p>
+                            <a href="${video.url}" target="_blank" class="text-blue-600 hover:underline text-sm font-medium break-all block mb-3">
+                                ${video.url}
+                            </a>
+                            <button 
+                                class="copy-one-btn bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg transition text-sm"
+                                data-index="${index}"
+                            >
+                                📋 복사
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                results.appendChild(div);
+            });
+
+            // 개별 복사 버튼 이벤트
+            document.querySelectorAll('.copy-one-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const videoIndex = parseInt(btn.getAttribute('data-index'));
+                    const video = currentResults[videoIndex];
+                    const text = `${video.title}\n채널: ${video.channelTitle}\n조회수: ${formatNumber(video.viewCount)}\n업로드: ${formatDate(video.publishedAt)}\n링크: ${video.url}\n썸네일: ${video.thumbnail}`;
+                    
+                    copyToClipboard(text);
+                    
+                    const original = btn.textContent;
+                    btn.textContent = '✅ 복사됨';
+                    setTimeout(() => {
+                        btn.textContent = original;
+                    }, 2000);
+                });
+            });
+
+            actionButtons.classList.remove('hidden');
+        }
+
+        function updateStats(total, filtered, videos) {
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('filteredCount').textContent = filtered;
+            
+            const totalViews = videos.reduce((sum, v) => sum + v.viewCount, 0);
+            // 총 조회수는 콤마로 구분
+            document.getElementById('totalViews').textContent = totalViews.toLocaleString() + '회';
+            
+            stats.classList.remove('hidden');
+        }
+
+        function formatNumber(num) {
+            if (num >= 100000000) {
+                // 1억 이상
+                const eok = Math.floor(num / 100000000);
+                const man = Math.floor((num % 100000000) / 10000);
+                if (man > 0) {
+                    return `${eok}억${man}만회`;
+                }
+                return `${eok}억회`;
+            } else if (num >= 10000) {
+                // 1만 이상
+                const man = Math.floor(num / 10000);
+                const cheon = Math.floor((num % 10000) / 1000);
+                if (cheon > 0) {
+                    return `${man}만${cheon}천회`;
+                }
+                return `${man}만회`;
+            } else if (num >= 1000) {
+                // 1천 이상
+                const cheon = Math.floor(num / 1000);
+                return `${cheon}천회`;
+            }
+            return `${num}회`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            return `${year}.${month}.${day}`;
+        }
+
+        function hideAll() {
+            loading.classList.add('hidden');
+            stats.classList.add('hidden');
+            results.innerHTML = '';
+            error.classList.add('hidden');
+            actionButtons.classList.add('hidden');
+        }
+
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            error.classList.remove('hidden');
+        }
+
+        // 전체 복사
+        copyBtn.addEventListener('click', () => {
+            let text = `=== ${keywordInput.value} 검색 결과 ===\n\n`;
+            
+            currentResults.forEach((video, index) => {
+                text += `${index + 1}. ${video.title}\n`;
+                text += `   채널: ${video.channelTitle}\n`;
+                text += `   조회수: ${formatNumber(video.viewCount)}\n`;
+                text += `   업로드: ${formatDate(video.publishedAt)}\n`;
+                text += `   링크: ${video.url}\n`;
+                text += `   썸네일: ${video.thumbnail}\n\n`;
+            });
+
+            copyToClipboard(text);
+            
+            const original = copyBtn.textContent;
+            copyBtn.textContent = '✅ 복사 완료!';
+            setTimeout(() => {
+                copyBtn.textContent = original;
+            }, 2000);
+        });
+
+        // TXT 다운로드
+        downloadBtn.addEventListener('click', () => {
+            let text = `=== ${keywordInput.value} 검색 결과 ===\n\n`;
+            
+            currentResults.forEach((video, index) => {
+                text += `${index + 1}. ${video.title}\n`;
+                text += `   채널: ${video.channelTitle}\n`;
+                text += `   조회수: ${formatNumber(video.viewCount)}\n`;
+                text += `   업로드: ${formatDate(video.publishedAt)}\n`;
+                text += `   링크: ${video.url}\n`;
+                text += `   썸네일: ${video.thumbnail}\n\n`;
+            });
+
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `youtube_${keywordInput.value}_${Date.now()}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        function copyToClipboard(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+    </script>
+</body>
+</html>
