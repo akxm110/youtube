@@ -128,6 +128,55 @@
                     >
                     <p class="text-xs text-gray-500 mt-1">0 = 제한없음</p>
                 </div>
+
+                <!-- 영상 타입 -->
+                <div>
+                    <label class="block text-gray-700 font-bold mb-2">
+                        🎬 영상 타입
+                    </label>
+                    <select 
+                        id="videoType" 
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                    >
+                        <option value="all">전체</option>
+                        <option value="shorts">숏츠만 (60초 이하)</option>
+                        <option value="long">일반 영상만 (60초 초과)</option>
+                    </select>
+                </div>
+
+                <!-- 영상 길이 -->
+                <div>
+                    <label class="block text-gray-700 font-bold mb-2">
+                        ⏱️ 영상 길이
+                    </label>
+                    <select 
+                        id="videoDuration" 
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                    >
+                        <option value="any">전체</option>
+                        <option value="short">4분 미만</option>
+                        <option value="medium">4~20분 ⭐</option>
+                        <option value="long">20분 이상</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">유튜브 공식 길이 필터</p>
+                </div>
+
+                <!-- 정렬 순서 -->
+                <div>
+                    <label class="block text-gray-700 font-bold mb-2">
+                        📊 정렬 순서
+                    </label>
+                    <select 
+                        id="sortOrder" 
+                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none transition"
+                    >
+                        <option value="relevance">관련성 (유튜브 기본)</option>
+                        <option value="date">최신순</option>
+                        <option value="viewCount">조회수 많은 순</option>
+                        <option value="rating">평점 높은 순</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">관련성 순이 가장 많은 결과를 가져옵니다</p>
+                </div>
             </div>
 
             <button 
@@ -194,6 +243,9 @@
         const maxResultsInput = document.getElementById('maxResults');
         const minViewsInput = document.getElementById('minViews');
         const maxViewsInput = document.getElementById('maxViews');
+        const videoTypeSelect = document.getElementById('videoType');
+        const videoDurationSelect = document.getElementById('videoDuration');
+        const sortOrderSelect = document.getElementById('sortOrder');
         const searchBtn = document.getElementById('searchBtn');
         const loading = document.getElementById('loading');
         const loadingDetail = document.getElementById('loadingDetail');
@@ -222,6 +274,33 @@
         });
 
         searchBtn.addEventListener('click', searchVideos);
+
+        // ISO 8601 duration을 초로 변환
+        function parseDuration(duration) {
+            const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+            if (!match) return 0;
+            
+            const hours = parseInt(match[1]) || 0;
+            const minutes = parseInt(match[2]) || 0;
+            const seconds = parseInt(match[3]) || 0;
+            
+            return hours * 3600 + minutes * 60 + seconds;
+        }
+        
+        // 초를 시간 형식으로 변환
+        function formatDuration(seconds) {
+            if (seconds < 60) {
+                return `${seconds}초`;
+            } else if (seconds < 3600) {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return secs > 0 ? `${mins}분 ${secs}초` : `${mins}분`;
+            } else {
+                const hours = Math.floor(seconds / 3600);
+                const mins = Math.floor((seconds % 3600) / 60);
+                return mins > 0 ? `${hours}시간 ${mins}분` : `${hours}시간`;
+            }
+        }
 
         // 한글 숫자를 숫자로 변환하는 함수
         function parseKoreanNumber(input) {
@@ -310,8 +389,21 @@
             loadingDetail.textContent = '영상 검색 중...';
 
             try {
-                // Step 1: 검색
-                const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keyword)}&type=video&maxResults=${maxResults}&order=viewCount&key=${apiKey}`;
+                // Step 1: 검색 (영상 길이 필터 + 정렬 순서 포함)
+                // 조회수 필터 사용 시 더 많이 가져오기 (조건 맞는 영상 확보)
+                const videoDuration = videoDurationSelect.value;
+                const sortOrder = sortOrderSelect.value;
+                
+                // 조회수 필터가 있으면 항상 50개 가져오기 (최대한 많이)
+                let fetchCount = 50; // 항상 최대치로 가져오기
+                
+                let searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(keyword)}&type=video&maxResults=${fetchCount}&order=${sortOrder}&key=${apiKey}`;
+                
+                // 영상 길이 필터 추가
+                if (videoDuration !== 'any') {
+                    searchUrl += `&videoDuration=${videoDuration}`;
+                }
+                
                 const searchResponse = await fetch(searchUrl);
                 
                 if (!searchResponse.ok) {
@@ -328,7 +420,7 @@
 
                 // Step 2: 상세 정보
                 const videoIds = searchData.items.map(item => item.id.videoId).join(',');
-                const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoIds}&key=${apiKey}`;
+                const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${apiKey}`;
                 const detailsResponse = await fetch(detailsUrl);
                 
                 if (!detailsResponse.ok) {
@@ -338,22 +430,38 @@
                 const detailsData = await detailsResponse.json();
 
                 // 결과 처리
-                let videos = detailsData.items.map(item => ({
-                    id: item.id,
-                    title: item.snippet.title,
-                    channelTitle: item.snippet.channelTitle,
-                    publishedAt: item.snippet.publishedAt,
-                    thumbnail: item.snippet.thumbnails.medium.url,
-                    viewCount: parseInt(item.statistics.viewCount || 0),
-                    likeCount: parseInt(item.statistics.likeCount || 0),
-                    url: `https://www.youtube.com/watch?v=${item.id}`
-                }));
+                const videoType = videoTypeSelect.value;
+                
+                let videos = detailsData.items.map(item => {
+                    const durationSeconds = parseDuration(item.contentDetails.duration);
+                    const isShorts = durationSeconds <= 60;
+                    
+                    return {
+                        id: item.id,
+                        title: item.snippet.title,
+                        channelTitle: item.snippet.channelTitle,
+                        publishedAt: item.snippet.publishedAt,
+                        thumbnail: item.snippet.thumbnails.medium.url,
+                        viewCount: parseInt(item.statistics.viewCount || 0),
+                        likeCount: parseInt(item.statistics.likeCount || 0),
+                        url: `https://www.youtube.com/watch?v=${item.id}`,
+                        duration: durationSeconds,
+                        durationText: formatDuration(durationSeconds),
+                        isShorts: isShorts
+                    };
+                });
 
-                // 조회수 범위 필터
+                // 조회수 범위 필터 + 영상 타입 필터
                 const totalCount = videos.length;
                 videos = videos.filter(v => {
+                    // 조회수 필터
                     if (minViews > 0 && v.viewCount < minViews) return false;
                     if (maxViews > 0 && v.viewCount > maxViews) return false;
+                    
+                    // 영상 타입 필터
+                    if (videoType === 'shorts' && !v.isShorts) return false;
+                    if (videoType === 'long' && v.isShorts) return false;
+                    
                     return true;
                 });
 
@@ -361,12 +469,17 @@
                     throw new Error('조건에 맞는 영상이 없습니다.');
                 }
 
-                // 조회수 순 정렬
-                videos.sort((a, b) => b.viewCount - a.viewCount);
+                // 정렬 순서가 조회수일 때만 다시 정렬 (API 정렬 유지)
+                if (sortOrder === 'viewCount') {
+                    videos.sort((a, b) => b.viewCount - a.viewCount);
+                }
 
-                currentResults = videos;
-                displayResults(videos);
-                updateStats(totalCount, videos.length, videos);
+                // 사용자가 요청한 개수만큼만 표시
+                const displayVideos = videos.slice(0, maxResults);
+                
+                currentResults = displayVideos;
+                displayResults(displayVideos);
+                updateStats(totalCount, displayVideos.length, displayVideos);
 
             } catch (err) {
                 console.error(err);
@@ -404,6 +517,8 @@
                             </div>
                             <p class="text-sm text-gray-600 mb-2">
                                 📺 ${escapeHtml(video.channelTitle)}<br>
+                                ${video.isShorts ? '<span class="bg-red-500 text-white px-2 py-1 rounded text-xs font-bold mr-2">SHORTS</span>' : '<span class="bg-blue-500 text-white px-2 py-1 rounded text-xs font-bold mr-2">일반</span>'}
+                                ⏱️ ${video.durationText} • 
                                 👁️ ${formatNumber(video.viewCount)} 조회 • 
                                 ❤️ ${formatNumber(video.likeCount)} • 
                                 📅 ${formatDate(video.publishedAt)}
@@ -430,7 +545,8 @@
                     e.stopPropagation();
                     const videoIndex = parseInt(btn.getAttribute('data-index'));
                     const video = currentResults[videoIndex];
-                    const text = `${video.title}\n채널: ${video.channelTitle}\n조회수: ${formatNumber(video.viewCount)}\n업로드: ${formatDate(video.publishedAt)}\n링크: ${video.url}\n썸네일: ${video.thumbnail}`;
+                    const typeText = video.isShorts ? '[숏츠]' : '[일반]';
+                    const text = `${video.title}\n타입: ${typeText}\n길이: ${video.durationText}\n채널: ${video.channelTitle}\n조회수: ${formatNumber(video.viewCount)}\n업로드: ${formatDate(video.publishedAt)}\n링크: ${video.url}\n썸네일: ${video.thumbnail}`;
                     
                     copyToClipboard(text);
                     
@@ -513,7 +629,9 @@
             let text = `=== ${keywordInput.value} 검색 결과 ===\n\n`;
             
             currentResults.forEach((video, index) => {
+                const typeText = video.isShorts ? '[숏츠]' : '[일반]';
                 text += `${index + 1}. ${video.title}\n`;
+                text += `   타입: ${typeText} (${video.durationText})\n`;
                 text += `   채널: ${video.channelTitle}\n`;
                 text += `   조회수: ${formatNumber(video.viewCount)}\n`;
                 text += `   업로드: ${formatDate(video.publishedAt)}\n`;
@@ -535,7 +653,9 @@
             let text = `=== ${keywordInput.value} 검색 결과 ===\n\n`;
             
             currentResults.forEach((video, index) => {
+                const typeText = video.isShorts ? '[숏츠]' : '[일반]';
                 text += `${index + 1}. ${video.title}\n`;
+                text += `   타입: ${typeText} (${video.durationText})\n`;
                 text += `   채널: ${video.channelTitle}\n`;
                 text += `   조회수: ${formatNumber(video.viewCount)}\n`;
                 text += `   업로드: ${formatDate(video.publishedAt)}\n`;
